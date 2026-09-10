@@ -13,4 +13,6 @@ __pycache__/
 .idea/
 
 # Local/generated data
-storage/*
+storage/* 
+.streamlit/secrets.toml
+

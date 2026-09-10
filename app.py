@@ -13,17 +13,35 @@ from chains.format_chain import format_resume_chain
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
-os.environ["GEMINI_API_KEY"] = os.getenv("GEMINI_API_KEY")
-os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")
-
 import time
 
-primary_model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-primary_llm = ChatGoogleGenerativeAI(model=primary_model, max_retries=3)
-fallback_1 = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", max_retries=3)
-fallback_2 = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", max_retries=3)
-llm = primary_llm.with_fallbacks([fallback_1, fallback_2])
+# Safely retrieve GEMINI API Key from environment or Streamlit secrets
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    try:
+        gemini_api_key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        gemini_api_key = None
+
+if gemini_api_key:
+    os.environ["GEMINI_API_KEY"] = str(gemini_api_key)
+    os.environ["GOOGLE_API_KEY"] = str(gemini_api_key)
+
+model_from_secrets = None
+try:
+    model_from_secrets = st.secrets.get("GEMINI_MODEL")
+except Exception:
+    pass
+
+primary_model = os.getenv("GEMINI_MODEL") or model_from_secrets or "gemini-flash-latest"
+
+if gemini_api_key:
+    primary_llm = ChatGoogleGenerativeAI(model=primary_model, max_retries=3, api_key=gemini_api_key)
+    fallback_1 = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", max_retries=3, api_key=gemini_api_key)
+    fallback_2 = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", max_retries=3, api_key=gemini_api_key)
+    llm = primary_llm.with_fallbacks([fallback_1, fallback_2])
+else:
+    llm = None
 
 SECTIONS = ["ATS Analysis", "Skills", "Interview", "Rewrite Resume"]
 
@@ -279,6 +297,27 @@ def render_rewrite_resume():
 
 def main():
     st.set_page_config(page_title="AI Resume Analyzer", layout="wide")
+
+    global llm
+    if llm is None:
+        with st.sidebar:
+            st.title("AI Resume Analyzer")
+            st.warning("🔑 **GEMINI_API_KEY** not detected.")
+            user_key = st.text_input("Enter Gemini API Key", type="password", help="Get your key at https://aistudio.google.com/")
+            if user_key:
+                os.environ["GEMINI_API_KEY"] = str(user_key)
+                os.environ["GOOGLE_API_KEY"] = str(user_key)
+                p_llm = ChatGoogleGenerativeAI(model=primary_model, max_retries=3, api_key=user_key)
+                fb1 = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", max_retries=3, api_key=user_key)
+                fb2 = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", max_retries=3, api_key=user_key)
+                llm = p_llm.with_fallbacks([fb1, fb2])
+                st.success("API key configured!")
+                st.rerun()
+            else:
+                st.info("Provide your API key in the sidebar or via Streamlit Cloud Secrets.")
+        st.title("AI Resume ATS Analyzer")
+        st.info("👈 Please enter your Gemini API Key in the sidebar to proceed.")
+        return
 
     with st.sidebar:
         st.title("AI Resume Analyzer")
